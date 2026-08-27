@@ -1,0 +1,16 @@
+---
+- name: 基本パッケージをインストール
+  ansible.builtin.package:
+    name: "{{ common_packages }}"
+    state: present
+  tags: [common, packages]
+
+- name: タイムゾーンを設定
+  community.general.timezone:
+    name: "{{ timezone }}"
+  notify: restart cron
+  tags: [common, timezone]
+
+- name: users.csv からアカウントを管理
+  ansible.builtin.import_tasks: users.yml
+  tags: [common, users]

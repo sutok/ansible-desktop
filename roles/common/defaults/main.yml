@@ -1,0 +1,96 @@
+---
+common_packages:
+  - vim
+
+timezone: Asia/Tokyo
+
+# ---- users.csv からのアカウント管理 ----------------------------------------
+users_csv_path: "{{ role_path }}/files/users.csv"
+
+# Delete 列が真とみなされる値
+users_truthy: ['True', 'true', 'TRUE', '1', 'yes', 'Yes', 'YES', 'y', 'Y']
+
+# Delete=True の行の扱い: remove（削除・既定） / disable（無効化のみ）
+# いずれもサーバー上に存在するアカウントだけが対象
+users_delete_mode: remove
+
+# 削除は userdel をオプション無しで実行する（-r を付けない）。
+# ホームディレクトリとメールスプールは残るため、不要になったら手動で削除する。
+
+# 誤って削除すると復旧できないアカウント（事前に assert で弾く）
+# kusanagi / ec2-user / psuser は削除・無効化すると復旧できないため必ず含めること
+users_protected:
+  - root
+  - kusanagi
+  - ec2-user
+  - psuser
+  - "{{ ansible_user | default('') }}"
+
+users_shell: /bin/bash
+users_create_home: true
+users_nologin_shell: >-
+  {{ '/usr/sbin/nologin' if ansible_facts['os_family'] == 'Debian' else '/sbin/nologin' }}
+
+# 管理者グループ名（RedHat 系は wheel、Debian 系は sudo）
+users_admin_group: >-
+  {{ 'wheel' if ansible_facts['os_family'] == 'RedHat' else 'sudo' }}
+
+# CSV の AdditionalGroups 値 -> Linux グループ名 の読み替え
+# CSV が Windows 由来のため Administrators を管理者グループへ寄せる
+users_group_map:
+  Administrators: "{{ users_admin_group }}"
+
+# 作成する全ユーザーを必ず参加させるグループ（KUSANAGI 環境の既存グループ）。
+# GID を壊さないため Ansible では作成しない。存在しなければ実行を止める。
+users_default_groups:
+  - www
+  - kusanagi
+
+# CSV の AdditionalGroups に書かれた未作成グループを自動作成するか
+users_create_missing_groups: true
+
+# Ansible から参加させてはいけないグループ。
+# wheel（sudo 権限）の付与は運用ルール上 Ansible 経由では行わない。
+# ここに挙げたグループは作成もメンバー追加も行わず、対象者を警告表示するだけにする。
+users_forbidden_groups:
+  - wheel
+  - sudo
+
+# ---- SSH 公開鍵の配置 -------------------------------------------------------
+# 鍵ペアは Ansible 実行機（localhost）側で生成し、公開鍵だけをサーバーへ配置する。
+# 秘密鍵はサーバーに置かない。
+users_generate_ssh_keys: true
+users_ssh_key_dir: "{{ role_path }}/files/ssh_keys"
+users_ssh_key_type: ed25519
+
+# true にすると authorized_keys を CSV の内容で上書きし、手動追加された鍵を削除する。
+# 締め出し事故を避けるため既定は false（追記のみ）。
+users_ssh_key_exclusive: false
+
+# ---- SFTP chroot 用の bind mount -------------------------------------------
+# users.csv の mount_point 列（コロン区切りの配列）に書かれた公開元パスを、
+# ユーザーのホーム配下へ bind mount する。
+#
+#   src  : /home/kusanagi/fantasy.co.jp/DocumentRoot/company/static
+#   dest : /home/<UserName>/fantasy.co.jp/DocumentRoot/company/static
+#
+# dest は src の先頭 /home/<users_mount_source_owner>/ を /home/<UserName>/ に
+# 置き換えて作る。この置換規則があるため、ホームは /home/<UserName> 固定とみなす。
+users_mount_source_owner: kusanagi
+
+# chroot 境界（ユーザーのホーム）の所有者とモード。
+# root 所有かつグループ／その他に書き込み権が無いこと、が sshd の ChrootDirectory の条件。
+users_sftp_home_owner: root
+users_sftp_home_group: root
+users_sftp_home_mode: '0755'
+
+# bind mount の適用方法
+#   mounted : mount を実行し /etc/fstab にも書く（既定）
+#   present : /etc/fstab に書くだけでマウントはしない（別途 mount -a が必要）
+users_sftp_mount_state: mounted
+users_sftp_mount_opts: bind
+
+# mount_point 列の区切り文字（正規表現の文字クラス）。
+# 仕様はコロン区切り。セミコロン区切りで書かれた行も安全のため受け付ける。
+# 連続したスラッシュ（wp-content//sites）は 1 つに正規化してから使う。
+users_mount_point_separator: '[;:]'

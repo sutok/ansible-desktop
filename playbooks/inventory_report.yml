@@ -1,0 +1,148 @@
+---
+# 全顧客・全環境のホストから環境情報を収集し、管理台帳（CSV / Markdown）を生成する。
+#
+#   全体台帳の作成:        make report
+#   1環境だけ再収集して更新: ansible-playbook -i inventories/<顧客>/<環境> playbooks/inventory_report.yml
+#
+# 収集結果はホストごとに build/report/*.json へ保存され、実行のたびに
+# そこにある全ホスト分から台帳（build/ledger.csv / build/ledger.md）を再生成する。
+# そのため 1 環境だけの再実行でも、他の環境の収集済みデータは台帳に残る。
+
+- name: 環境情報の収集
+  hosts: all
+  gather_facts: false
+  vars:
+    report_dir: "{{ playbook_dir }}/../build/report"
+  tasks:
+    - name: 保存先ディレクトリーを作成
+      ansible.builtin.file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      run_once: true
+
+    - name: ファクト収集（到達不能ホストも台帳には unreachable として載せる）
+      ansible.builtin.setup:
+        gather_subset:
+          - "!all"
+          - min
+          - hardware
+          - network
+      ignore_unreachable: true
+      register: setup_result
+
+    - name: /etc/os-release を取得
+      ansible.builtin.slurp:
+        src: /etc/os-release
+      register: os_release_raw
+      ignore_errors: true
+      when: not (setup_result.unreachable | default(false))
+
+    # record の組み立ては delegate_to のタスク内で行わないこと。
+    # 委譲タスク内では ansible_host 等の接続変数が委譲先のものに差し替わる。
+    - name: ホスト情報を組み立て
+      ansible.builtin.set_fact:
+        record:
+          customer: "{{ customer_name | default('unknown') }}"
+          environment: "{{ env_name | default('unknown') }}"
+          hostname: "{{ inventory_hostname }}"
+          ansible_host: "{{ ansible_host | default(inventory_hostname) }}"
+          status: "{{ 'unreachable' if (setup_result.unreachable | default(false)) else 'ok' }}"
+          os: "{{ ansible_facts.distribution | default('') }} {{ ansible_facts.distribution_version | default('') }}"
+          kernel: "{{ ansible_facts.kernel | default('') }}"
+          arch: "{{ ansible_facts.architecture | default('') }}"
+          vcpus: "{{ ansible_facts.processor_vcpus | default('') }}"
+          memory_mb: "{{ ansible_facts.memtotal_mb | default('') }}"
+          root_disk_gb: "{{ ((ansible_facts.mounts | default([]) | selectattr('mount', 'equalto', '/') | map(attribute='size_total') | first | default(0) | int) / 1073741824) | round(1) }}"
+          ipv4: "{{ ansible_facts.all_ipv4_addresses | default([]) | join(' ') }}"
+          hardware: "{{ ansible_facts.system_vendor | default('') }} {{ ansible_facts.product_name | default('') }}"
+          os_release: "{{ os_release_dict }}"
+          groups: "{{ group_names | join(' ') }}"
+          collected_at: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+      vars:
+        # /etc/os-release を KEY: VALUE の辞書に解析（値の囲み引用符は除去）
+        os_release_text: "{{ (os_release_raw.content | b64decode) if (os_release_raw.content is defined) else '' }}"
+        os_release_dict: >-
+          {%- set d = {} -%}
+          {%- for line in os_release_text.splitlines() -%}
+            {%- set l = line | trim -%}
+            {%- if l and not l.startswith('#') and '=' in l -%}
+              {%- set kv = l.split('=', 1) -%}
+              {%- set _ = d.update({kv[0] | trim: kv[1] | trim | regex_replace('^"(.*)"$', '\\1')}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ d }}
+
+    - name: ホスト情報を JSON で保存
+      ansible.builtin.copy:
+        dest: "{{ report_dir }}/{{ record.customer }}__{{ record.environment }}__{{ record.hostname }}.json"
+        content: "{{ record | to_nice_json(sort_keys=False) }}"
+        mode: "0644"
+      delegate_to: localhost
+
+- name: 管理台帳の生成
+  hosts: localhost
+  gather_facts: false
+  vars:
+    build_dir: "{{ playbook_dir }}/../build"
+    report_dir: "{{ playbook_dir }}/../build/report"
+    # ===== 台帳に載せる os-release のキーをここで定義する =====
+    # 空リスト [] にすると全キーを出力（従来どおり）。
+    # 一時的に変えたいときは -e '{"report_os_release_keys": ["NAME","VERSION_ID"]}' で上書き可。
+    report_os_release_keys:
+      - NAME
+      - VERSION_ID
+      - REDHAT_SUPPORT_PRODUCT
+      - REDHAT_SUPPORT_PRODUCT_VERSION
+      - SUPPORT_END
+  tasks:
+    - name: 出力先ディレクトリーを作成
+      ansible.builtin.file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: 収集済み JSON を読み込み
+      ansible.builtin.set_fact:
+        ledger: "{{ ledger | default([]) + [lookup('ansible.builtin.file', item) | from_json] }}"
+      loop: "{{ query('ansible.builtin.fileglob', report_dir ~ '/*.json') | sort }}"
+
+    # 台帳の os-release 列を決定する。report_os_release_keys が定義されていれば
+    # その順序どおりに限定し、空なら全ホストの出現キーの和集合（初出順）。
+    - name: os-release の出力キーを確定
+      ansible.builtin.set_fact:
+        osr_keys: "{{ report_os_release_keys }}"
+      when: report_os_release_keys | default([]) | length > 0
+
+    - name: os-release の出現キーを集計
+      when: osr_keys is not defined
+      ansible.builtin.set_fact:
+        osr_keys: >-
+          {%- set keys = [] -%}
+          {%- for r in ledger | default([]) -%}
+            {%- if r.os_release | default({}) is mapping -%}
+              {%- for k in r.os_release.keys() -%}
+                {%- if k not in keys -%}{%- set _ = keys.append(k) -%}{%- endif -%}
+              {%- endfor -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ keys }}
+
+    - name: CSV 台帳を生成
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/inventory_ledger_csv.j2"
+        dest: "{{ build_dir }}/ledger.csv"
+        mode: "0644"
+      vars:
+        ledger_rows: "{{ ledger | default([]) }}"
+        ledger_osr_keys: "{{ osr_keys | default([]) }}"
+
+    - name: Markdown 台帳を生成
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/inventory_ledger_md.j2"
+        dest: "{{ build_dir }}/ledger.md"
+        mode: "0644"
+      vars:
+        ledger_rows: "{{ ledger | default([]) }}"
+        ledger_osr_keys: "{{ osr_keys | default([]) }}"

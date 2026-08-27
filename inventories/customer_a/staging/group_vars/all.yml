@@ -1,0 +1,8 @@
+---
+customer_name: customer_a
+env_name: staging
+
+# この顧客・この環境の接続設定
+# （検証コンテナは ~/.ssh/id_ed25519 で認証するため鍵指定は不要）
+ansible_user: ec2-user
+# ansible_ssh_private_key_file: ~/.ssh/customer_a.pem

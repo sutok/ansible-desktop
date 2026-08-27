@@ -1,0 +1,11 @@
+---
+- name: 全ホスト共通設定
+  hosts: all
+  become: true
+  roles:
+    - common
+
+# - name: Web サーバー設定
+#   hosts: web
+#   become: true
+#   roles: []

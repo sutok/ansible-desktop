@@ -1,0 +1,12 @@
+---
+# 全ホスト共通の変数
+ansible_port: 22
+ansible_python_interpreter: auto_silent
+
+# タイムゾーン / ロケール
+timezone: Asia/Tokyo
+
+# common ロールで入れる基本パッケージ
+common_packages:
+  - vim
+

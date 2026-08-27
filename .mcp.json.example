@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "backlog": {
+      "command": "npx",
+      "args": ["backlog-mcp-server"],
+      "env": {
+        "BACKLOG_DOMAIN": "wexal.backlog.jp",
+        "BACKLOG_API_KEY": ""
+      }
+    },
+    "ansible": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@ansible/ansible-mcp-server",
+        "--stdio"
+      ],
+      "env": {
+        "WORKSPACE_ROOT": "."
+      }
+    }
+  }
+}

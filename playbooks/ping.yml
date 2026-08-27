@@ -1,0 +1,20 @@
+---
+- name: 疎通確認（SSH と Python の到達性チェック）
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: ping
+      ansible.builtin.ping:
+
+    - name: 基本情報を取得
+      ansible.builtin.setup:
+        gather_subset:
+          - '!all'
+          - min
+
+    - name: OS 情報を表示
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} /
+          {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }} /
+          python={{ ansible_facts['python_version'] }}
