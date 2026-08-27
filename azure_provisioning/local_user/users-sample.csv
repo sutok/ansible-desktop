@@ -1,0 +1,8 @@
+﻿Delete,UserName,LastName,FirstName,Password,Description,AdditionalGroups
+,sasakiryo,Sasaki,Ryo,,営業部,
+,tanakat,TANAKA,Taro,,開発部 / 姓が全部大文字でも正規化される,
+,suzukih,suzuki,hanako,Keiri#2026Spring1234,経理部 / パスワードを明示指定,
+,obrienm,O'Brien,Michael,,アポストロフィを含む姓,
+,smithj,Smith-Jones,Anna,,ハイフンを含む姓,
+,kanri01,Hoshu,Kanri,,保守管理 / 追加グループあり,Administrators
+True,taishoku01,,,,退職者 / この行は削除処理が走る,

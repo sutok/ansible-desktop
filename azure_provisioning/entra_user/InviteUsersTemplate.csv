@@ -1,0 +1,2 @@
+﻿招待するメール アドレス [inviteeEmail] 必須,リダイレクト URL [inviteRedirectURL] 必須,招待メッセージの送信 (true または false) [sendEmail],カスタマイズされた招待メッセージ [customizedMessageBody],招待されているユーザーの表示名 [invitedUserDisplayName]
+guest@example.com,https://myapps.microsoft.com,true,Welcome to our organization!,John Doe
