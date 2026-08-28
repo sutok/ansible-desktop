@@ -7,12 +7,37 @@
   run_once: true
   register: users_csv
 
-- name: Delete 列で有効／無効に振り分ける
+# ServerName 列（Delete 列の次）で、その行を適用するサーバーを限定する。
+#   ・all            : 全サーバーが対象（大文字小文字は問わない）
+#   ・サーバー名      : インベントリのホスト名（inventory_hostname）と一致するサーバーのみ
+#   ・名前:名前:...   : コロン区切りで複数サーバーを指定
+#   ・空欄            : どのサーバーにも適用しない（適用したい場合は必ず記入する）
+# ここで絞り込んでから Delete 列で振り分けるため、アカウント作成だけでなく
+# 削除・SFTP bind mount もすべて ServerName の指定に従う。
+- name: ServerName 列でこのサーバー宛ての行に絞り、Delete 列で有効／無効に振り分ける
   ansible.builtin.set_fact:
     users_enabled: "{{ _rows | rejectattr('Delete', 'in', users_truthy) | list }}"
     users_disabled: "{{ _rows | selectattr('Delete', 'in', users_truthy) | list }}"
+    users_rows_other_servers: >-
+      {{ _all_rows | map(attribute='UserName') | list
+         | difference(_rows | map(attribute='UserName') | list) }}
   vars:
-    _rows: "{{ users_csv.list | rejectattr('UserName', 'eq', '') | list }}"
+    _all_rows: "{{ users_csv.list | rejectattr('UserName', 'eq', '') | list }}"
+    _rows_json: >-
+      [{% for r in _all_rows
+            if (r.ServerName | default('') | trim | lower) == 'all'
+            or inventory_hostname in ((r.ServerName | default('')).split(':')
+                                       | map('trim') | select | list)
+        %}{{ r | to_json }}{{ "," if not loop.last }}{% endfor %}]
+    _rows: "{{ _rows_json | from_json }}"
+
+- name: ServerName 列でこのサーバーの対象外になった行を表示する
+  ansible.builtin.debug:
+    msg: >-
+      次のユーザーは ServerName 列がこのサーバー（{{ inventory_hostname }}）を
+      指していないため処理しません（空欄も対象外。全サーバー対象は all）:
+      {{ users_rows_other_servers | join(', ') }}
+  when: users_rows_other_servers | length > 0
 
 - name: 保護対象アカウントが Delete 対象に入っていないか検査
   ansible.builtin.assert:
