@@ -68,7 +68,7 @@ users_ssh_key_type: ed25519
 users_ssh_key_exclusive: false
 
 # ---- SFTP chroot 用の bind mount -------------------------------------------
-# users.csv の mount_point 列（コロン区切りの配列）に書かれた公開元パスを、
+# users.csv の mount_src 列（コロン区切りの配列）に書かれた公開元パスを、
 # ユーザーのホーム配下へ bind mount する。
 #
 #   src  : /home/kusanagi/fantasy.co.jp/DocumentRoot/company/static
@@ -90,7 +90,7 @@ users_sftp_home_mode: '0755'
 users_sftp_mount_state: mounted
 users_sftp_mount_opts: bind
 
-# mount_point 列の区切り文字（正規表現の文字クラス）。
+# mount_src 列の区切り文字（正規表現の文字クラス）。
 # 仕様はコロン区切り。セミコロン区切りで書かれた行も安全のため受け付ける。
 # 連続したスラッシュ（wp-content//sites）は 1 つに正規化してから使う。
-users_mount_point_separator: '[;:]'
+users_mount_src_separator: '[;:]'

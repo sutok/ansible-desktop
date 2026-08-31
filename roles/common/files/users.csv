@@ -1,4 +1,4 @@
-﻿Delete,ServerName,UserName,LastName,FirstName,Password,Description,AdditionalGroups,sftp,no_login,mount_point
+﻿Delete,ServerName,UserName,LastName,FirstName,Password,Description,AdditionalGroups,sftp,no_login,mount_src
 ,,sasakiryo,Sasaki,Ryo,,営業部,,,,
 ,,tanakat,TANAKA,Taro,,開発部 / 姓が全部大文字でも正規化される,,True,,/home/kusanagi/fantasy.co.jp/DocumentRoot/wp-content/sites/1:/home/kusanagi/fantasy.co.jp/DocumentRoot/wp-includes/sites/1
 ,,suzukih,suzuki,hanako,Keiri#2026Spring1234,経理部 / パスワードを明示指定,,,,

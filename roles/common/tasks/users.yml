@@ -207,12 +207,12 @@
   when: not ansible_check_mode or item.UserName in ansible_facts.getent_passwd
 
 # ---- SFTP chroot 用の bind mount --------------------------------------------
-# users.csv の mount_point 列をコロン区切りの配列として扱い、1 パスにつき
+# users.csv の mount_src 列をコロン区切りの配列として扱い、1 パスにつき
 # 1 つの bind mount を作る。
 #   src  : 列に書かれたパスそのもの（KUSANAGI 側の実体）
 #   dest : 先頭の /home/<users_mount_source_owner>/ を /home/<UserName>/ に置換したパス
 # src と dest を入れ替えると実体側が空になって復旧できない。順序を変えないこと。
-- name: mount_point 列からマウント定義を組み立てる
+- name: mount_src 列からマウント定義を組み立てる
   ansible.builtin.set_fact:
     users_sftp: "{{ _json | from_json }}"
   vars:
@@ -220,11 +220,11 @@
     # 後段の掃除タスクが既存の bind mount と fstab エントリを削除する。
     _rows: >-
       {{ users_enabled | selectattr('sftp', 'defined') | selectattr('sftp', 'in', users_truthy)
-         | selectattr('mount_point', 'defined')
-         | rejectattr('mount_point', 'match', '^\s*$') | list }}
+         | selectattr('mount_src', 'defined')
+         | rejectattr('mount_src', 'match', '^\s*$') | list }}
     _json: >-
       [{% for u in _rows %}{"user": {{ u.UserName | to_json }}, "mounts":
-      [{% for p in (u.mount_point | regex_replace(users_mount_point_separator, ';') | regex_replace('/{2,}', '/')).split(';') | map('trim') | select | list %}{"src": {{ p | to_json }},
+      [{% for p in (u.mount_src | regex_replace(users_mount_src_separator, ';') | regex_replace('/{2,}', '/')).split(';') | map('trim') | select | list %}{"src": {{ p | to_json }},
       "dest": {{ p | regex_replace('^/home/' ~ users_mount_source_owner ~ '/', '/home/' ~ u.UserName ~ '/') | to_json }}}{{ "," if not loop.last }}{% endfor %}]}{{ "," if not loop.last }}{% endfor %}]
 
 - name: マウント定義を検査する
@@ -233,7 +233,7 @@
       - _bad_prefix | length == 0
       - _protected | length == 0
     fail_msg: >-
-      mount_point の値が不正です。
+      mount_src の値が不正です。
       /home/{{ users_mount_source_owner }}/ で始まらないパス（置換後も src と同じになり
       自分自身を bind mount してしまう）: {{ _bad_prefix }} /
       保護対象アカウントへの指定（ホームを root 所有に変えてしまう）: {{ _protected }}
@@ -327,7 +327,7 @@
     label: "{{ item.1.src }} -> {{ item.1.dest }}"
 
 # ---- 不要になった bind mount の掃除 -----------------------------------------
-# CSV の sftp を空欄にした／mount_point から消した／ユーザーを Delete にした場合、
+# CSV の sftp を空欄にした／mount_src から消した／ユーザーを Delete にした場合、
 # 対応する bind mount を解除して /etc/fstab からも削除する。誤爆を避けるため、
 #   ・マウント元が /home/<users_mount_source_owner>/ 配下
 #   ・マウント先が CSV に載っているユーザー（保護対象を除く）のホーム配下
@@ -373,7 +373,7 @@
 
 # ---- 退役ユーザーの削除 -----------------------------------------------------
 # 順序を変えないこと。
-#   1. mount_point 由来の bind mount を解除する（そのユーザー自身のマウント先だけ）
+#   1. mount_src 由来の bind mount を解除する（そのユーザー自身のマウント先だけ）
 #   2. userdel をオプション無しで実行する
 - name: 削除対象ユーザーのマウント先を組み立てる
   ansible.builtin.set_fact:
@@ -381,16 +381,16 @@
   vars:
     _rows: >-
       {{ users_disabled | selectattr('sftp', 'defined') | selectattr('sftp', 'in', users_truthy)
-         | selectattr('mount_point', 'defined')
-         | rejectattr('mount_point', 'match', '^\s*$')
+         | selectattr('mount_src', 'defined')
+         | rejectattr('mount_src', 'match', '^\s*$')
          | rejectattr('UserName', 'in', users_protected) | list }}
-    # 解除するのは mount_point の値そのもの（src＝実体）ではなく、
+    # 解除するのは mount_src の値そのもの（src＝実体）ではなく、
     # そこから導いたマウント先（dest）。作成時と同じ置換規則を使う。
     # 置換後に /home/<UserName>/ 配下にならないパスは他人のマウント先か実体側なので
     # dests から外し、skipped に退避して警告するだけにする。
     _json: >-
       [{% for u in _rows %}
-      {% set _dests = (u.mount_point | regex_replace(users_mount_point_separator, ';') | regex_replace('/{2,}', '/')).split(';')
+      {% set _dests = (u.mount_src | regex_replace(users_mount_src_separator, ';') | regex_replace('/{2,}', '/')).split(';')
          | map('trim') | select
          | map('regex_replace', '^/home/' ~ users_mount_source_owner ~ '/', '/home/' ~ u.UserName ~ '/') | list %}
       {% set _own = '^/home/' ~ (u.UserName | regex_escape) ~ '/' %}
