@@ -47,6 +47,38 @@ Makefile を使わない場合:
 ansible-playbook -i inventories/customer_a/production playbooks/site.yml --limit ca-prd-web01
 ```
 
+## アカウント管理（users.csv）
+
+`playbooks/site.yml`（common ロール、タグ `users`）は
+`roles/common/files/users.csv` を読み込み、行ごとにアカウントの作成・削除・
+SSH 公開鍵の配置・SFTP 用 bind mount を行う。CSV は UTF-8（BOM 可）、
+1 行目がヘッダー。`UserName` が空の行は無視される。
+
+```csv
+Delete,ServerName,UserName,LastName,FirstName,Password,Description,AdditionalGroups,sftp,no_login,mount_src
+,all,tanakat,Tanaka,Taro,,開発部,,True,True,/home/kusanagi/example.jp/DocumentRoot/wp-content/sites/1:/home/kusanagi/example.jp/DocumentRoot/wp-includes/sites/1
+True,ca-prd-web01,suzukih,Suzuki,Hanako,,経理部,,,,
+```
+
+| 列 | 説明 |
+|---|---|
+| `Delete` | 真値（`True` / `1` / `yes` / `y` など）で退役扱い。サーバーに存在する場合のみ `userdel`（`-r` なし。ホームとメールスプールは残る）を実行する。`users_delete_mode: disable` にすると削除せずシェルを nologin にしてロックするだけになる。`root` / `kusanagi` / `ec2-user` / `psuser` / 実行ユーザーは保護対象で、指定するとプレイブックが停止する。 |
+| `ServerName` | その行を適用するサーバー。`all`（大文字小文字不問）で全サーバー、インベントリーのホスト名で特定サーバー、`名前:名前` のコロン区切りで複数指定。**空欄はどのサーバーにも適用されない**（作成も削除もされない）。 |
+| `UserName` | Linux のアカウント名。SSH 鍵ファイル名・ホーム（`/home/<UserName>`）にもそのまま使われる。 |
+| `LastName` / `FirstName` | GECOS（`comment`）用の氏名。大小文字は正規化される（`TANAKA` → `Tanaka`、`o'brien` → `O'Brien`）。 |
+| `Password` | **使用しない**。SSH はパスワード認証を行わない方針のため、値があっても無視して警告を出す。アカウントは常にパスワードロック状態で作成される。 |
+| `Description` | GECOS に氏名の後ろへ付与する説明（部署など）。`:` は空白に置き換えられる。 |
+| `AdditionalGroups` | 追加参加させるグループ（カンマ区切り）。未作成のグループは自動作成する。`Administrators` は `wheel` / `sudo` に読み替えるが、**sudo 権限の付与は Ansible からは行わない**ため警告のみで参加させない。全ユーザーは列の指定に関係なく `www` / `kusanagi` にも参加する（これらはサーバー側に存在している必要がある）。 |
+| `sftp` | 真値で SFTP chroot 用に構成する。ホームを `root:root 0755` に変更し、`mount_src` の bind mount を作る。空欄に戻すと既存の bind mount と `/etc/fstab` のエントリを削除する。 |
+| `no_login` | `sftp` と両方真のときだけ有効で、シェルを nologin にして SFTP 専用アカウントにする。`no_login` 単独では効果がない（シェルは `/bin/bash` のまま）。 |
+| `mount_src` | SFTP で公開する**マウント元**（実体）のパス。コロン区切りで複数指定可（セミコロンも可）。`/home/kusanagi/` 配下のパスのみ有効で、先頭の `/home/kusanagi/` を `/home/<UserName>/` に置き換えた場所がマウント先になる（例: `/home/kusanagi/example.jp/DocumentRoot/a` → `/home/tanakat/example.jp/DocumentRoot/a`）。マウント元が存在しない場合は警告してスキップする（実体は Ansible では作らない）。列から消すと対応する bind mount を解除し、`Delete` 時は `userdel` の前に解除する。 |
+
+SSH 鍵は実行機の `roles/common/files/ssh_keys/<UserName>`（秘密鍵）/ `<UserName>.pub` に
+ed25519 で生成され、公開鍵だけが `authorized_keys` へ配置される。既存の鍵は
+作り直さない。既定では `authorized_keys` に追記のみで、手動追加された鍵は消さない
+（`users_ssh_key_exclusive: true` で CSV の内容に上書き）。
+各種既定値は `roles/common/defaults/main.yml` を参照。
+
 ## 管理台帳の作成（全顧客 × 全環境 × 全ホスト）
 
 ```bash
@@ -62,8 +94,10 @@ make report C=customer_b   # 指定顧客の全環境のみを対象に台帳を
 `C=<顧客名>` を指定した場合は `inventories/<顧客名>/` 配下の環境だけを対象にし、
 出力名は `build/report_<顧客名>_inventories.csv` / `.md` になる。
 収集項目: OS / カーネル / アーキテクチャ / vCPU / メモリ / ディスク / IPv4 /
-ハードウェア基盤 / 所属グループ / 収集日時。到達できないホストも
-`status: unreachable` として台帳に残る。
+ハードウェア基盤 / `/etc/os-release` の主要キー（`NAME`, `VERSION_ID`,
+`SUPPORT_END` など。`playbooks/inventory_report.yml` の `report_os_release_keys` で変更可）/
+所属グループ / 収集日時。列の並びは `templates/inventory_ledger_{csv,md}.j2` で定義する。
+到達できないホストも `status: unreachable` として台帳に残る。
 
 1 環境だけ収集し直して台帳を更新することもできる（他環境の収集済みデータは残る）:
 
