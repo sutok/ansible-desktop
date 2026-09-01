@@ -5,7 +5,9 @@
 #   1環境だけ再収集して更新: ansible-playbook -i inventories/<顧客>/<環境> playbooks/inventory_report.yml
 #
 # 収集結果はホストごとに build/report/*.json へ保存され、実行のたびに
-# そこにある全ホスト分から台帳（build/ledger.csv / build/ledger.md）を再生成する。
+# そこにある全ホスト分から台帳（build/<ledger_basename>.csv / .md）を再生成する。
+# ledger_basename の既定は report_all_inventories。make report からは
+# C の有無に応じて report_all_inventories / report_<顧客名>_inventories が渡される。
 # そのため 1 環境だけの再実行でも、他の環境の収集済みデータは台帳に残る。
 
 - name: 環境情報の収集
@@ -87,6 +89,8 @@
   vars:
     build_dir: "{{ playbook_dir }}/../build"
     report_dir: "{{ playbook_dir }}/../build/report"
+    # 台帳ファイルの基底名（make report が -e で上書きする）
+    ledger_basename: "report_all_inventories"
     # ===== 台帳に載せる os-release のキーをここで定義する =====
     # 空リスト [] にすると全キーを出力（従来どおり）。
     # 一時的に変えたいときは -e '{"report_os_release_keys": ["NAME","VERSION_ID"]}' で上書き可。
@@ -132,7 +136,7 @@
     - name: CSV 台帳を生成
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../templates/inventory_ledger_csv.j2"
-        dest: "{{ build_dir }}/ledger.csv"
+        dest: "{{ build_dir }}/{{ ledger_basename }}.csv"
         mode: "0644"
       vars:
         ledger_rows: "{{ ledger | default([]) }}"
@@ -141,7 +145,7 @@
     - name: Markdown 台帳を生成
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../templates/inventory_ledger_md.j2"
-        dest: "{{ build_dir }}/ledger.md"
+        dest: "{{ build_dir }}/{{ ledger_basename }}.md"
         mode: "0644"
       vars:
         ledger_rows: "{{ ledger | default([]) }}"

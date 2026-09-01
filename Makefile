@@ -12,7 +12,9 @@
 # 全顧客 × 全環境の横断操作:
 #   make list-all     # 全インベントリーの対象ホストを一覧表示
 #   make report       # 全ホストから環境情報を収集して管理台帳を生成
-#                     # → build/ledger.csv / build/ledger.md
+#                     # → build/report_all_inventories.csv / .md
+#   make report C=customer_b   # 指定顧客の全環境のみを対象に台帳を生成
+#                     # → build/report_<顧客名>_inventories.csv / .md
 
 P ?= site
 INV = inventories/$(C)/$(E)
@@ -20,6 +22,12 @@ LIMIT = $(if $(L),--limit $(L))
 
 # 全「顧客 × 環境」ディレクトリー（_template を除く）
 ALL_ENVS = $(shell find inventories -mindepth 2 -maxdepth 2 -type d ! -path 'inventories/_template*' | sort)
+
+# report の対象環境。C 指定時は inventories/<顧客>/ 配下の全環境、未指定時は全環境
+REPORT_ENVS = $(if $(C),$(shell find inventories/$(C) -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort),$(ALL_ENVS))
+
+# 台帳ファイルの基底名。C 指定時は report_<顧客名>_inventories、未指定時は report_all_inventories
+LEDGER_NAME = report_$(if $(C),$(C),all)_inventories
 
 .PHONY: help guard list check run list-all report
 
@@ -46,9 +54,10 @@ list-all:
 # group_vars/all.yml が環境ごとに異なる（SSH 設定等が衝突する）ため、
 # 複数 -i の一括指定ではなく環境ごとに実行して build/report/ に集約する。
 report:
+	@test -z "$(C)" || test -d "inventories/$(C)" || { echo "インベントリーが見つかりません: inventories/$(C)"; exit 1; }
 	rm -rf build/report
-	@for d in $(ALL_ENVS); do \
+	@for d in $(REPORT_ENVS); do \
 		echo "=== $$d ==="; \
-		ansible-playbook -i $$d playbooks/inventory_report.yml || echo "WARN: $$d の収集に失敗"; \
+		ansible-playbook -i $$d playbooks/inventory_report.yml -e ledger_basename=$(LEDGER_NAME) || echo "WARN: $$d の収集に失敗"; \
 	done
-	@echo "生成完了: build/ledger.csv / build/ledger.md"
+	@echo "生成完了: build/$(LEDGER_NAME).csv / build/$(LEDGER_NAME).md"
