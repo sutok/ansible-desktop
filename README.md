@@ -83,6 +83,7 @@ ed25519 で生成され、公開鍵だけが `authorized_keys` へ配置され�
 
 ```bash
 make list-all              # 全インベントリーの対象ホストを一覧表示（SSH 接続なし）
+make list-all LIVE=1       # 収集結果を使わずインベントリーを直接照会
 make report                # 全ホストからファクトを収集して台帳を生成
 make report C=customer_b   # 指定顧客の全環境のみを対象に台帳を生成
 ```
@@ -105,6 +106,10 @@ RPM パッケージのバージョン（`MariaDB-server` / `kusanagi-nginx` / `k
 `kusanagi-php81` などのサブパッケージも対象になり、複数一致は重複を除いて空白区切りで並ぶ。
 一致行そのものは `build/report/*.json` の `packages_raw` に残る。一致なし・rpm 非搭載のホストは空欄。
 到達できないホストも `status: unreachable` として台帳に残る。
+
+`make list-all` は直前の `make report` の収集結果（`build/report/*.json`）があれば
+それをホスト名・状態・接続先・所属グループ・収集日時つきで表示する。収集結果が無い場合、
+または `LIVE=1` を付けた場合は、各インベントリーを `ansible-inventory --graph` で直接照会する。
 
 1 環境だけ収集し直して台帳を更新することもできる（他環境の収集済みデータは残る）:
 
