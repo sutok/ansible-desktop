@@ -1,4 +1,4 @@
-{{ '﻿' }}顧客,環境,ホスト名,接続先,状態,OS,カーネル,アーキテクチャ,vCPU,メモリ(MB),ディスク/(GB),IPv4アドレス,ハードウェア,{% for k in ledger_osr_keys %}{{ k }},{% endfor %}所属グループ,収集日時
+{{ '﻿' }}顧客,環境,ホスト名,接続先,状態,OS,カーネル,アーキテクチャ,vCPU,メモリ(MB),ディスク/(GB),IPv4アドレス,ハードウェア,{% for k in ledger_osr_keys %}{{ k }},{% endfor %}{% for k in ledger_pkg_keys %}{{ k }},{% endfor %}所属グループ,収集日時
 {% for r in ledger_rows %}
-"{{ r.customer }}","{{ r.environment }}","{{ r.hostname }}","{{ r.ansible_host }}","{{ r.status }}","{{ r.os | trim }}","{{ r.kernel }}","{{ r.arch }}","{{ r.vcpus }}","{{ r.memory_mb }}","{{ r.root_disk_gb }}","{{ r.ipv4 }}","{{ r.hardware | trim }}",{% for k in ledger_osr_keys %}"{{ (r.os_release | default({})).get(k, '') | replace('"', '""') }}",{% endfor %}"{{ r.groups }}","{{ r.collected_at }}"
+"{{ r.customer }}","{{ r.environment }}","{{ r.hostname }}","{{ r.ansible_host }}","{{ r.status }}","{{ r.os | trim }}","{{ r.kernel }}","{{ r.arch }}","{{ r.vcpus }}","{{ r.memory_mb }}","{{ r.root_disk_gb }}","{{ r.ipv4 }}","{{ r.hardware | trim }}",{% for k in ledger_osr_keys %}"{{ (r.os_release | default({})).get(k, '') | replace('"', '""') }}",{% endfor %}{% for k in ledger_pkg_keys %}"{{ r.get('packages', {}).get(k, '') | replace('"', '""') }}",{% endfor %}"{{ r.groups }}","{{ r.collected_at }}"
 {% endfor %}

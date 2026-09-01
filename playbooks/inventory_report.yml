@@ -4,6 +4,9 @@
 #   全体台帳の作成:        make report
 #   1環境だけ再収集して更新: ansible-playbook -i inventories/<顧客>/<環境> playbooks/inventory_report.yml
 #
+# 収集内容: setup ファクト（min/hardware/network）、/etc/os-release、
+# rpm -qa | grep によるパッケージバージョン（report_rpm_packages）。
+#
 # 収集結果はホストごとに build/report/*.json へ保存され、実行のたびに
 # そこにある全ホスト分から台帳（build/<ledger_basename>.csv / .md）を再生成する。
 # ledger_basename の既定は report_all_inventories。make report からは
@@ -15,6 +18,15 @@
   gather_facts: false
   vars:
     report_dir: "{{ playbook_dir }}/../build/report"
+    # ===== 台帳に載せる RPM パッケージをここで定義する =====
+    # ホストで rpm -qa | grep -i <名前> を実行し、一致した行をそのまま列に載せる
+    # （例: MariaDB-server-10.11.8-1.el9.x86_64）。複数一致は空白区切り。
+    # rpm が無いホスト・一致なしは空欄になる。
+    # 一時的に変えたいときは -e '{"report_rpm_packages": ["kusanagi-php"]}' で上書き可。
+    report_rpm_packages:
+      - MariaDB-server
+      - kusanagi-nginx
+      - kusanagi-php
   tasks:
     - name: 保存先ディレクトリーを作成
       ansible.builtin.file:
@@ -41,6 +53,16 @@
       ignore_errors: true
       when: not (setup_result.unreachable | default(false))
 
+    - name: RPM パッケージのバージョンを取得（rpm -qa | grep <名前>）
+      ansible.builtin.shell: rpm -qa | grep -i -- {{ item | quote }}
+      loop: "{{ report_rpm_packages }}"
+      register: rpm_pkgs
+      # 読み取りのみ。一致なし（rc=1）や rpm 未導入（rc=127）は空欄扱いにする。
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: not (setup_result.unreachable | default(false))
+
     # record の組み立ては delegate_to のタスク内で行わないこと。
     # 委譲タスク内では ansible_host 等の接続変数が委譲先のものに差し替わる。
     - name: ホスト情報を組み立て
@@ -60,6 +82,7 @@
           ipv4: "{{ ansible_facts.all_ipv4_addresses | default([]) | join(' ') }}"
           hardware: "{{ ansible_facts.system_vendor | default('') }} {{ ansible_facts.product_name | default('') }}"
           os_release: "{{ os_release_dict }}"
+          packages: "{{ packages_dict }}"
           groups: "{{ group_names | join(' ') }}"
           collected_at: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
       vars:
@@ -73,6 +96,13 @@
               {%- set kv = l.split('=', 1) -%}
               {%- set _ = d.update({kv[0] | trim: kv[1] | trim | regex_replace('^"(.*)"$', '\\1')}) -%}
             {%- endif -%}
+          {%- endfor -%}
+          {{ d }}
+        # rpm -qa | grep の結果を パッケージ名: 一致行 の辞書にする（列順は report_rpm_packages の順）
+        packages_dict: >-
+          {%- set d = {} -%}
+          {%- for r in rpm_pkgs.results | default([]) -%}
+            {%- set _ = d.update({r.item: (r.stdout_lines | default([]) | join(' '))}) -%}
           {%- endfor -%}
           {{ d }}
 
@@ -125,8 +155,22 @@
         osr_keys: >-
           {%- set keys = [] -%}
           {%- for r in ledger | default([]) -%}
-            {%- if r.os_release | default({}) is mapping -%}
-              {%- for k in r.os_release.keys() -%}
+            {%- if r.get('os_release', {}) is mapping -%}
+              {%- for k in r.get('os_release', {}).keys() -%}
+                {%- if k not in keys -%}{%- set _ = keys.append(k) -%}{%- endif -%}
+              {%- endfor -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ keys }}
+
+    # パッケージ列は収集済み JSON の packages キーの和集合（初出順 = report_rpm_packages の順）
+    - name: パッケージの出力キーを集計
+      ansible.builtin.set_fact:
+        pkg_keys: >-
+          {%- set keys = [] -%}
+          {%- for r in ledger | default([]) -%}
+            {%- if r.get('packages', {}) is mapping -%}
+              {%- for k in r.get('packages', {}).keys() -%}
                 {%- if k not in keys -%}{%- set _ = keys.append(k) -%}{%- endif -%}
               {%- endfor -%}
             {%- endif -%}
@@ -141,6 +185,7 @@
       vars:
         ledger_rows: "{{ ledger | default([]) }}"
         ledger_osr_keys: "{{ osr_keys | default([]) }}"
+        ledger_pkg_keys: "{{ pkg_keys | default([]) }}"
 
     - name: Markdown 台帳を生成
       ansible.builtin.template:
@@ -150,3 +195,4 @@
       vars:
         ledger_rows: "{{ ledger | default([]) }}"
         ledger_osr_keys: "{{ osr_keys | default([]) }}"
+        ledger_pkg_keys: "{{ pkg_keys | default([]) }}"
