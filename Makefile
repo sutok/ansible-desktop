@@ -11,6 +11,8 @@
 #
 # 全顧客 × 全環境の横断操作:
 #   make list-all     # 全インベントリーの対象ホストを一覧表示
+#                     # 直前の make report の結果（build/report/*.json）があればそれを表示、
+#                     # 無ければ ansible-inventory で照会。LIVE=1 で常に照会
 #   make report       # 全ホストから環境情報を収集して管理台帳を生成
 #                     # → build/report_all_inventories.csv / .md
 #   make report C=customer_b   # 指定顧客の全環境のみを対象に台帳を生成
@@ -48,8 +50,15 @@ check: guard
 run: guard
 	ansible-playbook -i $(INV) playbooks/$(P).yml $(LIMIT)
 
+# 直前の make report の結果（build/report/*.json）があればそれを表示する（SSH 接続なし）。
+# 無い場合、または LIVE=1 のときは各インベントリーに ansible-inventory --graph で照会する。
 list-all:
-	@for d in $(ALL_ENVS); do echo "=== $$d ==="; ansible-inventory -i $$d --graph; done
+	@if [ -z "$(LIVE)" ] && python3 scripts/list_report.py build/report; then \
+		:; \
+	else \
+		[ -n "$(LIVE)" ] || echo "# build/report/ に収集結果が無いためインベントリーを直接照会します（make report で収集後はその結果を表示）"; \
+		for d in $(ALL_ENVS); do echo "=== $$d ==="; ansible-inventory -i $$d --graph; done; \
+	fi
 
 # group_vars/all.yml が環境ごとに異なる（SSH 設定等が衝突する）ため、
 # 複数 -i の一括指定ではなく環境ごとに実行して build/report/ に集約する。
