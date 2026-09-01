@@ -50,14 +50,17 @@ ansible-playbook -i inventories/customer_a/production playbooks/site.yml --limit
 ## 管理台帳の作成（全顧客 × 全環境 × 全ホスト）
 
 ```bash
-make list-all   # 全インベントリーの対象ホストを一覧表示（SSH 接続なし）
-make report     # 全ホストからファクトを収集して台帳を生成
+make list-all              # 全インベントリーの対象ホストを一覧表示（SSH 接続なし）
+make report                # 全ホストからファクトを収集して台帳を生成
+make report C=customer_b   # 指定顧客の全環境のみを対象に台帳を生成
 ```
 
 `make report` は `_template` を除く全「顧客 × 環境」を順に実行し、
 ホストごとの収集結果を `build/report/*.json` に保存したうえで
-**`build/ledger.csv`**（Excel でそのまま開ける UTF-8 BOM 付き）と
-**`build/ledger.md`** を生成する。
+**`build/report_all_inventories.csv`**（Excel でそのまま開ける UTF-8 BOM 付き）と
+**`build/report_all_inventories.md`** を生成する。
+`C=<顧客名>` を指定した場合は `inventories/<顧客名>/` 配下の環境だけを対象にし、
+出力名は `build/report_<顧客名>_inventories.csv` / `.md` になる。
 収集項目: OS / カーネル / アーキテクチャ / vCPU / メモリ / ディスク / IPv4 /
 ハードウェア基盤 / 所属グループ / 収集日時。到達できないホストも
 `status: unreachable` として台帳に残る。
