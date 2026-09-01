@@ -100,9 +100,11 @@ RPM パッケージのバージョン（`MariaDB-server` / `kusanagi-nginx` / `k
 `report_rpm_packages` で変更可）/ 所属グループ / 収集日時。
 列の並びは `templates/inventory_ledger_{csv,md}.j2` で定義する。
 
-パッケージ列はホストで `rpm -qa | grep -i <名前>` を実行した結果をそのまま載せる
-（例: `MariaDB-server-10.11.8-1.el9.x86_64`）。部分一致のため `kusanagi-php` は
-`kusanagi-php81` などのサブパッケージも空白区切りで並ぶ。一致なし・rpm 非搭載のホストは空欄。
+パッケージ列はホストで `rpm -qa | grep -i <名前>` を実行し、一致したパッケージの
+バージョン番号だけ（`%{VERSION}`。例: `kusanagi-nginx-1.26.1-1.el9.x86_64` → `1.26.1`）を載せる。
+部分一致のため `kusanagi-php` は `kusanagi-php81` などのサブパッケージも対象になり、
+異なるバージョンが共存する場合は空白区切りで並ぶ（例: `8.1.29 8.3.9`）。
+一致なし・rpm 非搭載のホストは空欄。
 到達できないホストも `status: unreachable` として台帳に残る。
 
 1 環境だけ収集し直して台帳を更新することもできる（他環境の収集済みデータは残る）:

@@ -19,8 +19,10 @@
   vars:
     report_dir: "{{ playbook_dir }}/../build/report"
     # ===== 台帳に載せる RPM パッケージをここで定義する =====
-    # ホストで rpm -qa | grep -i <名前> を実行し、一致した行をそのまま列に載せる
-    # （例: MariaDB-server-10.11.8-1.el9.x86_64）。複数一致は空白区切り。
+    # ホストで rpm -qa | grep -i <名前> を実行し、一致したパッケージのバージョン
+    # （%{VERSION}。リリース番号・アーキテクチャは含めない）だけを列に載せる
+    # （例: kusanagi-nginx-1.26.1-1.el9.x86_64 → 1.26.1）。
+    # 複数一致は重複を除いて空白区切り（kusanagi-php81 と 83 が共存 → 8.1.29 8.3.9）。
     # rpm が無いホスト・一致なしは空欄になる。
     # 一時的に変えたいときは -e '{"report_rpm_packages": ["kusanagi-php"]}' で上書き可。
     report_rpm_packages:
@@ -54,7 +56,8 @@
       when: not (setup_result.unreachable | default(false))
 
     - name: RPM パッケージのバージョンを取得（rpm -qa | grep <名前>）
-      ansible.builtin.shell: rpm -qa | grep -i -- {{ item | quote }}
+      # 出力は「<NAME> <VERSION>」の 1 行 1 パッケージ。名前で grep し、後段で VERSION だけ使う。
+      ansible.builtin.shell: rpm -qa --queryformat '%{NAME} %{VERSION}\n' | grep -i -- {{ item | quote }}
       loop: "{{ report_rpm_packages }}"
       register: rpm_pkgs
       # 読み取りのみ。一致なし（rc=1）や rpm 未導入（rc=127）は空欄扱いにする。
@@ -98,11 +101,17 @@
             {%- endif -%}
           {%- endfor -%}
           {{ d }}
-        # rpm -qa | grep の結果を パッケージ名: 一致行 の辞書にする（列順は report_rpm_packages の順）
+        # rpm -qa | grep の結果を パッケージ名: バージョン の辞書にする（列順は report_rpm_packages の順）。
+        # 各行「<NAME> <VERSION>」の末尾要素だけを取り、重複を除いて空白区切りにする。
         packages_dict: >-
           {%- set d = {} -%}
           {%- for r in rpm_pkgs.results | default([]) -%}
-            {%- set _ = d.update({r.item: (r.stdout_lines | default([]) | join(' '))}) -%}
+            {%- set vs = [] -%}
+            {%- for line in r.stdout_lines | default([]) -%}
+              {%- set v = (line.split() | last | default('')) | trim -%}
+              {%- if v and v not in vs -%}{%- set _ = vs.append(v) -%}{%- endif -%}
+            {%- endfor -%}
+            {%- set _ = d.update({r.item: vs | join(' ')}) -%}
           {%- endfor -%}
           {{ d }}
 
